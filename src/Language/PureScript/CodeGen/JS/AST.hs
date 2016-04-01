@@ -25,17 +25,9 @@ data UnaryOperator
   --
   | Not
   -- |
-  -- Bitwise negation
-  --
-  | BitwiseNot
-  -- |
   -- Numeric unary \'plus\'
   --
   | Positive
-  -- |
-  -- Constructor
-  --
-  | JSNew
   deriving (Show, Read, Eq)
 
 -- |
@@ -62,6 +54,10 @@ data BinaryOperator
   -- Remainder
   --
   | Modulus
+  -- |
+  -- String concatenation
+  --
+  | Concat
   -- |
   -- Generic equality test
   --
@@ -94,30 +90,6 @@ data BinaryOperator
   -- Boolean or
   --
   | Or
-  -- |
-  -- Bitwise and
-  --
-  | BitwiseAnd
-  -- |
-  -- Bitwise or
-  --
-  | BitwiseOr
-  -- |
-  -- Bitwise xor
-  --
-  | BitwiseXor
-  -- |
-  -- Bitwise left shift
-  --
-  | ShiftLeft
-  -- |
-  -- Bitwise right shift
-  --
-  | ShiftRight
-  -- |
-  -- Bitwise right shift with zero-fill
-  --
-  | ZeroFillShiftRight
   deriving (Show, Read, Eq)
 
 -- |
@@ -209,18 +181,6 @@ data JS
   --
   | JSReturn (Maybe SourceSpan) JS
   -- |
-  -- Throw statement
-  --
-  | JSThrow (Maybe SourceSpan) JS
-  -- |
-  -- Type-Of operator
-  --
-  | JSTypeOf (Maybe SourceSpan) JS
-  -- |
-  -- InstanceOf test
-  --
-  | JSInstanceOf (Maybe SourceSpan) JS JS
-  -- |
   -- Labelled statement
   --
   | JSLabel (Maybe SourceSpan) String JS
@@ -269,9 +229,6 @@ withSourceSpan withSpan = go
   go (JSForIn _ name j1 j2) = JSForIn ss name j1 j2
   go (JSIfElse _ j1 j2 j3) = JSIfElse ss j1 j2 j3
   go (JSReturn _ js) = JSReturn ss js
-  go (JSThrow _ js) = JSThrow ss js
-  go (JSTypeOf _ js) = JSTypeOf ss js
-  go (JSInstanceOf _ j1 j2) = JSInstanceOf ss j1 j2
   go (JSLabel _ name js) = JSLabel ss name js
   go (JSBreak _ s) = JSBreak ss s
   go (JSContinue _ s) = JSContinue ss s
@@ -303,9 +260,6 @@ getSourceSpan = go
   go (JSForIn ss _ _ _) = ss
   go (JSIfElse ss _ _ _) = ss
   go (JSReturn ss _) = ss
-  go (JSThrow ss _) = ss
-  go (JSTypeOf ss _) = ss
-  go (JSInstanceOf ss _ _) = ss
   go (JSLabel ss _ _) = ss
   go (JSBreak ss _) = ss
   go (JSContinue ss _) = ss
@@ -337,10 +291,7 @@ everywhereOnJS f = go
   go (JSForIn ss name j1 j2) = f (JSForIn ss name (go j1) (go j2))
   go (JSIfElse ss j1 j2 j3) = f (JSIfElse ss (go j1) (go j2) (fmap go j3))
   go (JSReturn ss js) = f (JSReturn ss (go js))
-  go (JSThrow ss js) = f (JSThrow ss (go js))
-  go (JSTypeOf ss js) = f (JSTypeOf ss (go js))
   go (JSLabel ss name js) = f (JSLabel ss name (go js))
-  go (JSInstanceOf ss j1 j2) = f (JSInstanceOf ss (go j1) (go j2))
   go (JSComment ss com j) = f (JSComment ss com (go j))
   go other = f other
 
@@ -368,10 +319,7 @@ everywhereOnJSTopDownM f = f >=> go
   go (JSForIn ss name j1 j2) = JSForIn ss name <$> f' j1 <*> f' j2
   go (JSIfElse ss j1 j2 j3) = JSIfElse ss <$> f' j1 <*> f' j2 <*> traverse f' j3
   go (JSReturn ss j) = JSReturn ss <$> f' j
-  go (JSThrow ss j) = JSThrow ss <$> f' j
-  go (JSTypeOf ss j) = JSTypeOf ss <$> f' j
   go (JSLabel ss name j) = JSLabel ss name <$> f' j
-  go (JSInstanceOf ss j1 j2) = JSInstanceOf ss <$> f' j1 <*> f' j2
   go (JSComment ss com j) = JSComment ss com <$> f' j
   go other = f other
 
@@ -396,9 +344,6 @@ everythingOnJS (<>) f = go
   go j@(JSIfElse _ j1 j2 Nothing) = f j <> go j1 <> go j2
   go j@(JSIfElse _ j1 j2 (Just j3)) = f j <> go j1 <> go j2 <> go j3
   go j@(JSReturn _ j1) = f j <> go j1
-  go j@(JSThrow _ j1) = f j <> go j1
-  go j@(JSTypeOf _ j1) = f j <> go j1
   go j@(JSLabel _ _ j1) = f j <> go j1
-  go j@(JSInstanceOf _ j1 j2) = f j <> go j1 <> go j2
   go j@(JSComment _ _ j1) = f j <> go j1
   go other = f other

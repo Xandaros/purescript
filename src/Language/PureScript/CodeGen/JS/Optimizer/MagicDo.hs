@@ -71,6 +71,7 @@ magicDo' = everywhereOnJS undo . everywhereOnJSTopDown convert
   -- Remove __do function applications which remain after desugaring
   undo :: JS -> JS
   undo (JSReturn _ (JSApp _ (JSFunction _ (Just ident) [] body) [])) | ident == fnName = body
+  undo (JSFunction a (Just ident) [] body) | ident == fnName = JSFunction a Nothing [] body
   undo other = other
 
   applyReturns :: JS -> JS

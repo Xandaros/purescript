@@ -100,7 +100,7 @@ inlineCommonValues = everywhereOnJS convert
   fnDivide = [(C.prelude, (C./)), (C.prelude, C.div), (C.dataModuloSemiring, C.div)]
   fnMultiply = [(C.prelude, (C.*)), (C.prelude, C.mul), (C.dataSemiring, (C.*)), (C.dataSemiring, C.mul)]
   fnSubtract = [(C.prelude, (C.-)), (C.prelude, C.sub), (C.dataRing, C.sub)]
-  intOp ss op x y = JSBinary ss BitwiseOr (JSBinary ss op x y) (JSNumericLiteral ss (Left 0))
+  intOp ss op x y = JSApp ss (JSAccessor Nothing "floor" (JSVar Nothing "math")) [JSBinary ss op x y]
 
 inlineOperator :: (String, String) -> (JS -> JS -> JS) -> JS -> JS
 inlineOperator (m, op) f = everywhereOnJS convert
@@ -162,14 +162,6 @@ inlineCommonOperators = applyAll $
   , binary booleanAlgebraBoolean opConj And
   , binary booleanAlgebraBoolean opDisj Or
   , unary  booleanAlgebraBoolean opNot Not
-
-  , binary' C.dataIntBits (C..|.) BitwiseOr
-  , binary' C.dataIntBits (C..&.) BitwiseAnd
-  , binary' C.dataIntBits (C..^.) BitwiseXor
-  , binary' C.dataIntBits C.shl ShiftLeft
-  , binary' C.dataIntBits C.shr ShiftRight
-  , binary' C.dataIntBits C.zshr ZeroFillShiftRight
-  , unary'  C.dataIntBits C.complement BitwiseNot
   ] ++
   [ fn | i <- [0..10], fn <- [ mkFn i, runFn i ] ]
   where

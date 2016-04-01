@@ -80,7 +80,7 @@ compile PSCMakeOptions{..} = do
   when (null input && not pscmJSONErrors) $ do
     hPutStrLn stderr "psc: No input files."
     exitFailure
-  let (jsFiles, pursFiles) = partition (isSuffixOf ".js") input
+  let (jsFiles, pursFiles) = partition (isSuffixOf ".lua") input
   moduleFiles <- readInput (InputOptions pursFiles)
   inputForeign <- globWarningOnMisses (unless pscmJSONErrors . warnFileTypeNotFound) pscmForeignInput
   foreignFiles <- forM (inputForeign ++ jsFiles) (\inFile -> (inFile,) <$> readUTF8File inFile)
@@ -124,7 +124,7 @@ inputForeignFile :: Parser FilePath
 inputForeignFile = strOption $
      short 'f'
   <> long "ffi"
-  <> help "The input .js file(s) providing foreign import implementations"
+  <> help "The input .lua file(s) providing foreign import implementations"
 
 outputDirectory :: Parser FilePath
 outputDirectory = strOption $

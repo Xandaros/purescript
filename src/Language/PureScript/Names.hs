@@ -36,8 +36,8 @@ data Ident
 runIdent :: Ident -> String
 runIdent (Ident i) = i
 runIdent (Op op) = op
-runIdent (GenIdent Nothing n) = "$" ++ show n
-runIdent (GenIdent (Just name) n) = "$" ++ name ++ show n
+runIdent (GenIdent Nothing n) = "_" ++ show n
+runIdent (GenIdent (Just name) n) = "_" ++ name ++ show n
 
 showIdent :: Ident -> String
 showIdent (Op op) = '(' : op ++ ")"
@@ -80,8 +80,11 @@ coerceProperName = ProperName . runProperName
 newtype ModuleName = ModuleName [ProperName 'Namespace]
   deriving (Show, Read, Eq, Ord)
 
+runModuleName' :: String -> ModuleName -> String
+runModuleName' sep (ModuleName pns) = intercalate sep (runProperName `map` pns)
+
 runModuleName :: ModuleName -> String
-runModuleName (ModuleName pns) = intercalate "." (runProperName `map` pns)
+runModuleName = runModuleName' "."
 
 moduleNameFromString :: String -> ModuleName
 moduleNameFromString = ModuleName . splitProperNames

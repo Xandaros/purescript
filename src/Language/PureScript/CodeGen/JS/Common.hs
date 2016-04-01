@@ -12,7 +12,7 @@ import Language.PureScript.Names
 moduleNameToJs :: ModuleName -> String
 moduleNameToJs (ModuleName pns) =
   let name = intercalate "_" (runProperName `map` pns)
-  in if nameIsJsBuiltIn name then "$$" ++ name else name
+  in if nameIsJsBuiltIn name then "__" ++ name else name
 
 -- |
 -- Convert an Ident into a valid Javascript identifier:
@@ -25,7 +25,7 @@ moduleNameToJs (ModuleName pns) =
 --
 identToJs :: Ident -> String
 identToJs (Ident name)
-  | nameIsJsReserved name || nameIsJsBuiltIn name = "$$" ++ name
+  | nameIsJsReserved name || nameIsJsBuiltIn name = "__" ++ name
   | otherwise = concatMap identCharToString name
 identToJs (Op op) = concatMap identCharToString op
 identToJs (GenIdent _ _) = internalError "GenIdent in identToJs"
@@ -42,29 +42,29 @@ identNeedsEscaping s = s /= identToJs (Ident s)
 --
 identCharToString :: Char -> String
 identCharToString c | isAlphaNum c = [c]
-identCharToString '_' = "_"
-identCharToString '.' = "$dot"
-identCharToString '$' = "$dollar"
-identCharToString '~' = "$tilde"
-identCharToString '=' = "$eq"
-identCharToString '<' = "$less"
-identCharToString '>' = "$greater"
-identCharToString '!' = "$bang"
-identCharToString '#' = "$hash"
-identCharToString '%' = "$percent"
-identCharToString '^' = "$up"
-identCharToString '&' = "$amp"
-identCharToString '|' = "$bar"
-identCharToString '*' = "$times"
-identCharToString '/' = "$div"
-identCharToString '+' = "$plus"
-identCharToString '-' = "$minus"
-identCharToString ':' = "$colon"
-identCharToString '\\' = "$bslash"
-identCharToString '?' = "$qmark"
-identCharToString '@' = "$at"
-identCharToString '\'' = "$prime"
-identCharToString c = '$' : show (ord c)
+identCharToString '_'  = "_"
+identCharToString '.'  = "_dot"
+identCharToString '$'  = "_dollar"
+identCharToString '~'  = "_tilde"
+identCharToString '='  = "_eq"
+identCharToString '<'  = "_less"
+identCharToString '>'  = "_greater"
+identCharToString '!'  = "_bang"
+identCharToString '#'  = "_hash"
+identCharToString '%'  = "_percent"
+identCharToString '^'  = "_up"
+identCharToString '&'  = "_amp"
+identCharToString '|'  = "_bar"
+identCharToString '*'  = "_times"
+identCharToString '/'  = "_div"
+identCharToString '+'  = "_plus"
+identCharToString '-'  = "_minus"
+identCharToString ':'  = "_colon"
+identCharToString '\\' = "_bslash"
+identCharToString '?'  = "_qmark"
+identCharToString '@'  = "_at"
+identCharToString '\'' = "_prime"
+identCharToString c = '_' : show (ord c)
 
 -- |
 -- Checks whether an identifier name is reserved in Javascript.
@@ -79,153 +79,80 @@ nameIsJsReserved name =
 nameIsJsBuiltIn :: String -> Bool
 nameIsJsBuiltIn name =
   name `elem`
-    [ "arguments"
-    , "Array"
-    , "ArrayBuffer"
-    , "Boolean"
-    , "DataView"
-    , "Date"
-    , "decodeURI"
-    , "decodeURIComponent"
-    , "encodeURI"
-    , "encodeURIComponent"
-    , "Error"
-    , "escape"
-    , "eval"
-    , "EvalError"
-    , "Float32Array"
-    , "Float64Array"
-    , "Function"
-    , "Infinity"
-    , "Int16Array"
-    , "Int32Array"
-    , "Int8Array"
-    , "Intl"
-    , "isFinite"
-    , "isNaN"
-    , "JSON"
-    , "Map"
-    , "Math"
-    , "NaN"
-    , "Number"
-    , "Object"
-    , "parseFloat"
-    , "parseInt"
-    , "Promise"
-    , "Proxy"
-    , "RangeError"
-    , "ReferenceError"
-    , "Reflect"
-    , "RegExp"
-    , "Set"
-    , "SIMD"
-    , "String"
-    , "Symbol"
-    , "SyntaxError"
-    , "TypeError"
-    , "Uint16Array"
-    , "Uint32Array"
-    , "Uint8Array"
-    , "Uint8ClampedArray"
-    , "undefined"
-    , "unescape"
-    , "URIError"
-    , "WeakMap"
-    , "WeakSet"
+    [ "collectgarbage"
+    , "coroutine"
+    , "pcall"
+    , "utf8"
+    , "error"
+    , "tostring"
+    , "package"
+    , "next"
+    , "assert"
+    , "io"
+    , "module"
+    , "ipairs"
+    , "loadstring"
+    , "select"
+    , "_VERSION"
+    , "xpcall"
+    , "debug"
+    , "loadfile"
+    , "load"
+    , "_G"
+    , "string"
+    , "type"
+    , "setmetatable"
+    , "bit32"
+    , "arg"
+    , "tonumber"
+    , "os"
+    , "print"
+    , "table"
+    , "pairs"
+    , "unpack"
+    , "rawget"
+    , "rawset"
+    , "dofile"
+    , "getmetatable"
+    , "rawequal"
+    , "rawlen"
+    , "require"
+    , "math"
     ]
 
 jsAnyReserved :: [String]
 jsAnyReserved =
   concat
     [ jsKeywords
-    , jsSometimesReserved
-    , jsFutureReserved
-    , jsFutureReservedStrict
-    , jsOldReserved
     , jsLiterals
     ]
 
 jsKeywords :: [String]
 jsKeywords =
-  [ "break"
-  , "case"
-  , "catch"
-  , "class"
-  , "const"
-  , "continue"
-  , "debugger"
-  , "default"
-  , "delete"
+  [ "and"
+  , "break"
   , "do"
   , "else"
-  , "export"
-  , "extends"
-  , "finally"
+  , "elseif"
+  , "end"
   , "for"
   , "function"
-  , "if"
-  , "import"
-  , "in"
-  , "instanceof"
-  , "new"
-  , "return"
-  , "super"
-  , "switch"
-  , "this"
-  , "throw"
-  , "try"
-  , "typeof"
-  , "var"
-  , "void"
-  , "while"
-  , "with"
-  ]
-
-jsSometimesReserved :: [String]
-jsSometimesReserved =
-  [ "await"
-  , "let"
-  , "static"
-  , "yield"
-  ]
-
-jsFutureReserved :: [String]
-jsFutureReserved =
-  [ "enum" ]
-
-jsFutureReservedStrict :: [String]
-jsFutureReservedStrict =
-  [ "implements"
-  , "interface"
-  , "package"
-  , "private"
-  , "protected"
-  , "public"
-  ]
-
-jsOldReserved :: [String]
-jsOldReserved =
-  [ "abstract"
-  , "boolean"
-  , "byte"
-  , "char"
-  , "double"
-  , "final"
-  , "float"
   , "goto"
-  , "int"
-  , "long"
-  , "native"
-  , "short"
-  , "synchronized"
-  , "throws"
-  , "transient"
-  , "volatile"
+  , "if"
+  , "in"
+  , "local"
+  , "not"
+  , "or"
+  , "repeat"
+  , "return"
+  , "then"
+  , "until"
+  , "while"
   ]
 
 jsLiterals :: [String]
 jsLiterals =
-  [ "null"
+  [ "nil"
   , "true"
   , "false"
   ]

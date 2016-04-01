@@ -15,13 +15,12 @@ module Language.PureScript.CodeGen.JS
 import Prelude ()
 import Prelude.Compat
 
-import Data.List ((\\), delete, intersect)
+import Data.List ((\\), delete, intersect, intersperse)
 import Data.Maybe (isNothing, fromMaybe)
 import qualified Data.Map as M
 import qualified Data.Foldable as F
 import qualified Data.Traversable as T
 
-import Control.Arrow ((&&&))
 import Control.Monad (replicateM, forM, void)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.Reader (MonadReader, asks)
@@ -61,17 +60,24 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
     optimized <- T.traverse (T.traverse optimize) jsDecls
     F.traverse_ (F.traverse_ checkIntegers) optimized
     comments <- not <$> asks optionsNoComments
-    let strict = JSStringLiteral Nothing "use strict"
-    let header = if comments && not (null coms) then JSComment Nothing coms strict else strict
-    let foreign' = [JSVariableIntroduction Nothing "$foreign" foreign_ | not $ null foreigns || isNothing foreign_]
-    let moduleBody = header : foreign' ++ jsImports ++ concat optimized
+    let foreign' = [JSVariableIntroduction Nothing "_foreign" foreign_ | not $ null foreigns || isNothing foreign_]
+    let moduleBody = foreign' ++ jsImports ++ concat optimized
+    let moduleBody' = case moduleBody of
+            [] -> []
+            (x:xs) -> if comments && not (null coms)
+                         then (JSComment Nothing coms x):xs
+                         else x:xs
     let foreignExps = exps `intersect` (fst `map` foreigns)
     let standardExps = exps \\ foreignExps
-    let exps' = JSObjectLiteral Nothing $ map (runIdent &&& JSVar Nothing . identToJs) standardExps
-                               ++ map (runIdent &&& foreignIdent) foreignExps
-    return $ moduleBody ++ [JSAssignment Nothing (JSAccessor Nothing "exports" (JSVar Nothing "module")) exps']
+    let forwardDecls = [JSVariableIntroduction Nothing decl Nothing | decl <- (identToJs <$> standardExps)]
+    let exps' = [JSAssignment Nothing (JSIndexer Nothing (JSStringLiteral Nothing $ runIdent exp) (JSVar Nothing moduleName)) (JSVar Nothing $ identToJs exp) | exp <- standardExps]
+             ++ [JSAssignment Nothing (JSIndexer Nothing (JSStringLiteral Nothing $ runIdent exp) (JSVar Nothing moduleName)) (foreignIdent exp) | exp <- foreignExps]
+    return $ forwardDecls ++ moduleBody' ++ [JSVariableIntroduction Nothing moduleName (Just $ JSObjectLiteral Nothing [])] ++ exps' ++ [JSReturn Nothing $ JSVar Nothing moduleName]
 
   where
+
+  moduleName :: String
+  moduleName = runModuleName' "_" mn
 
   -- |
   -- Extracts all declaration names from a binding group.
@@ -111,7 +117,7 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
   importToJs mnLookup mn' = do
     path <- asks optionsRequirePath
     let ((ss, _, _, _), mnSafe) = fromMaybe (internalError "Missing value in mnLookup") $ M.lookup mn' mnLookup
-    let moduleBody = JSApp Nothing (JSVar Nothing "require") [JSStringLiteral Nothing (fromMaybe ".." path </> runModuleName mn')]
+    let moduleBody = JSApp Nothing (JSVar Nothing "require") [JSStringLiteral Nothing (fromMaybe "" path </> runModuleName' "_" mn')]
     withPos ss $ JSVariableIntroduction Nothing (moduleNameToJs mnSafe) (Just moduleBody)
 
   -- |
@@ -156,7 +162,7 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
        else JSComment Nothing com <$> nonRecToJS a i (modifyAnn removeComments e)
   nonRecToJS (ss, _, _, _) ident val = do
     js <- valueToJs val
-    withPos ss $ JSVariableIntroduction Nothing (identToJs ident) (Just js)
+    withPos ss $ JSAssignment Nothing (JSVar Nothing $ identToJs ident) js
 
   withPos :: Maybe SourceSpan -> JS -> m JS
   withPos (Just ss) js = do
@@ -209,15 +215,11 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
     sts <- mapM (sndM valueToJs) ps
     extendObj obj sts
   valueToJs' e@(Abs (_, _, _, Just IsTypeClassConstructor) _ _) =
-    let args = unAbs e
-    in return $ JSFunction Nothing Nothing (map identToJs args) (JSBlock Nothing $ map assign args)
+    return $ generateConstructor (unAbs e)
     where
     unAbs :: Expr Ann -> [Ident]
     unAbs (Abs _ arg val) = arg : unAbs val
     unAbs _ = []
-    assign :: Ident -> JS
-    assign name = JSAssignment Nothing (accessorString (runIdent name) (JSVar Nothing "this"))
-                               (var name)
   valueToJs' (Abs _ arg val) = do
     ret <- valueToJs val
     return $ JSFunction Nothing Nothing [identToJs arg] (JSBlock Nothing [JSReturn Nothing ret])
@@ -227,9 +229,9 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
     case f of
       Var (_, _, _, Just IsNewtype) _ -> return (head args')
       Var (_, _, _, Just (IsConstructor _ fields)) name | length args == length fields ->
-        return $ JSUnary Nothing JSNew $ JSApp Nothing (qualifiedToJS id name) args'
+        return $ JSApp Nothing (qualifiedToJS id name) args'
       Var (_, _, _, Just IsTypeClassConstructor) name ->
-        return $ JSUnary Nothing JSNew $ JSApp Nothing (qualifiedToJS id name) args'
+        return $ JSApp Nothing (qualifiedToJS id name) args'
       _ -> flip (foldl (\fn a -> JSApp Nothing fn [a])) args' <$> valueToJs f
     where
     unApp :: Expr Ann -> [Expr Ann] -> (Expr Ann, [Expr Ann])
@@ -254,20 +256,34 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
                 JSObjectLiteral Nothing [("create",
                   JSFunction Nothing Nothing ["value"]
                     (JSBlock Nothing [JSReturn Nothing $ JSVar Nothing "value"]))])
-  valueToJs' (Constructor _ _ (ProperName ctor) []) =
-    return $ iife ctor [ JSFunction Nothing (Just ctor) [] (JSBlock Nothing [])
-           , JSAssignment Nothing (JSAccessor Nothing "value" (JSVar Nothing ctor))
-                (JSUnary Nothing JSNew $ JSApp Nothing (JSVar Nothing ctor) []) ]
-  valueToJs' (Constructor _ _ (ProperName ctor) fields) =
-    let constructor =
-          let body = [ JSAssignment Nothing (JSAccessor Nothing (identToJs f) (JSVar Nothing "this")) (var f) | f <- fields ]
-          in JSFunction Nothing (Just ctor) (identToJs `map` fields) (JSBlock Nothing body)
-        createFn =
-          let body = JSUnary Nothing JSNew $ JSApp Nothing (JSVar Nothing ctor) (var `map` fields)
-          in foldr (\f inner -> JSFunction Nothing Nothing [identToJs f] (JSBlock Nothing [JSReturn Nothing inner])) body fields
-    in return $ iife ctor [ constructor
-                          , JSAssignment Nothing (JSAccessor Nothing "create" (JSVar Nothing ctor)) createFn
-                          ]
+  valueToJs' (Constructor _ _ (ProperName _) []) =
+    return $ iife "constr" [ JSVariableIntroduction Nothing "constr" (Just emptyObj)
+                           , JSAssignment Nothing (JSAccessor Nothing "value" constr) (setmetatable [emptyObj, constr])
+                       ]
+  valueToJs' (Constructor _ _ (ProperName ctor) fields) = return $ generateConstructor fields
+
+  generateConstructor :: [Ident] -> JS
+  generateConstructor params = iife "constr" [ JSVariableIntroduction Nothing "constr" (Just emptyObj)
+                                             , setmetatable [constr, constr]
+                                             , JSAssignment Nothing (JSAccessor Nothing "__call" constr) $ JSFunction Nothing Nothing ("self":params') $
+                                                 JSBlock Nothing $ [ JSVariableIntroduction Nothing "ret" (Just $ setmetatable [emptyObj, constr])
+                                                                   ] ++ map (uncurry $ assign "ret") (zip params_ params') ++
+                                                                   [ JSReturn Nothing $ JSVar Nothing "ret"
+                                                                   ]
+                                             ]
+    where
+      params' = identToJs <$> params
+      params_ = runIdent <$> params
+      assign tbl nam val = JSAssignment Nothing (JSIndexer Nothing (JSStringLiteral Nothing nam) (JSVar Nothing tbl)) (JSVar Nothing val)
+
+  constr :: JS
+  constr = JSVar Nothing "constr"
+
+  emptyObj :: JS
+  emptyObj = JSObjectLiteral Nothing []
+
+  setmetatable :: [JS] -> JS
+  setmetatable = JSApp Nothing (JSVar Nothing "setmetatable")
 
   iife :: String -> [JS] -> JS
   iife v exprs = JSApp Nothing (JSFunction Nothing Nothing [] (JSBlock Nothing $ exprs ++ [JSReturn Nothing $ JSVar Nothing v])) []
@@ -318,7 +334,7 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
   qualifiedToJS f (Qualified _ a) = JSVar Nothing $ identToJs (f a)
 
   foreignIdent :: Ident -> JS
-  foreignIdent ident = accessorString (runIdent ident) (JSVar Nothing "$foreign")
+  foreignIdent ident = accessorString (runIdent ident) (JSVar Nothing "_foreign")
 
   -- |
   -- Generate code in the simplified Javascript intermediate representation for pattern match binders
@@ -331,7 +347,7 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
     jss <- forM binders $ \(CaseAlternative bs result) -> do
       ret <- guardsToJs result
       go valNames ret bs
-    return $ JSApp Nothing (JSFunction Nothing Nothing [] (JSBlock Nothing (assignments ++ concat jss ++ [JSThrow Nothing $ failedPatternError valNames])))
+    return $ JSApp Nothing (JSFunction Nothing Nothing [] (JSBlock Nothing (assignments ++ concat jss ++ [throw $ failedPatternError valNames])))
                    []
     where
       go :: [String] -> [JS] -> [Binder Ann] -> m [JS]
@@ -342,7 +358,10 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
       go _ _ _ = internalError "Invalid arguments to bindersToJs"
 
       failedPatternError :: [String] -> JS
-      failedPatternError names = JSUnary Nothing JSNew $ JSApp Nothing (JSVar Nothing "Error") [JSBinary Nothing Add (JSStringLiteral Nothing failedPatternMessage) (JSArrayLiteral Nothing $ zipWith valueError names vals)]
+      failedPatternError names = JSBinary Nothing Concat (JSStringLiteral Nothing failedPatternMessage) msg
+        where
+            errs = zipWith valueError names vals
+            msg = foldr1 (JSBinary Nothing Concat) $ intersperse (JSStringLiteral Nothing ", ") errs
 
       failedPatternMessage :: String
       failedPatternMessage = "Failed pattern match" ++ maybe "" (((" at " ++ runModuleName mn ++ " ") ++) . displayStartEndPos) maybeSpan ++ ": "
@@ -382,7 +401,7 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
     return $ case ctorType of
       ProductType -> js
       SumType ->
-        [JSIfElse Nothing (JSInstanceOf Nothing (JSVar Nothing varName) (qualifiedToJS (Ident . runProperName) ctor))
+        [JSIfElse Nothing (instanceOf (JSVar Nothing varName) (qualifiedToJS (Ident . runProperName) ctor))
                   (JSBlock Nothing js)
                   Nothing]
     where
@@ -450,3 +469,9 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
          then throwError . errorMessage $ IntOutOfRange i "JavaScript" minInt maxInt
          else return js
     go other = return other
+
+  throw :: JS -> JS
+  throw js = JSApp Nothing (JSVar Nothing "error") [js]
+
+  instanceOf :: JS -> JS -> JS
+  instanceOf obj clazz = JSBinary Nothing EqualTo (JSApp Nothing (JSVar Nothing "getmetatable") [obj]) clazz

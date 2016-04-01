@@ -25,12 +25,11 @@ import Prelude.Compat hiding (lex)
 import Control.Monad (forM_, when, msum)
 import Control.Monad.Error.Class (MonadError(..))
 import Control.Monad.Writer.Class (MonadWriter(..))
+import Data.Char (isSpace)
 import Data.Function (on)
 import Data.List (sortBy, groupBy)
 import Language.PureScript.Errors
 import Language.PureScript.Names
-import Language.PureScript.Parser.Common
-import Language.PureScript.Parser.Lexer
 import qualified Data.Map as M
 import qualified Text.Parsec as PS
 
@@ -56,5 +55,9 @@ findModuleName :: [String] -> Maybe ModuleName
 findModuleName = msum . map parseComment
   where
   parseComment :: String -> Maybe ModuleName
-  parseComment s = either (const Nothing) Just $
-    lex "" s >>= runTokenParser "" (symbol' "//" *> reserved "module" *> moduleName <* PS.eof)
+  parseComment s = either (const Nothing) Just $ PS.parse
+    (PS.string "--" *> PS.spaces *> PS.string "module" *> PS.spaces *> moduleName <* PS.eof)
+    "" s
+
+moduleName :: PS.Parsec String () ModuleName
+moduleName = moduleNameFromString <$> PS.many (PS.satisfy (not . isSpace))

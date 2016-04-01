@@ -52,35 +52,31 @@ literals = mkPattern' match'
   match (JSBooleanLiteral _ True) = return $ emit "true"
   match (JSBooleanLiteral _ False) = return $ emit "false"
   match (JSArrayLiteral _ xs) = mconcat <$> sequence
-    [ return $ emit "[ "
+    [ return $ emit "{ "
     , intercalate (emit ", ") <$> forM xs prettyPrintJS'
-    , return $ emit " ]"
+    , return $ emit " }"
     ]
   match (JSObjectLiteral _ []) = return $ emit "{}"
   match (JSObjectLiteral _ ps) = mconcat <$> sequence
     [ return $ emit "{\n"
     , withIndent $ do
-        jss <- forM ps $ \(key, value) -> fmap ((objectPropertyToString key <> emit ": ") <>) . prettyPrintJS' $ value
+        jss <- forM ps $ \(key, value) -> fmap ((emit key <> emit " = ") <>) . prettyPrintJS' $ value
         indentString <- currentIndent
-        return $ intercalate (emit ", \n") $ map (indentString <>) jss
+        return $ intercalate (emit ",\n") $ map (indentString <>) jss
     , return $ emit "\n"
     , currentIndent
     , return $ emit "}"
     ]
-    where
-    objectPropertyToString :: (Emit gen) => String -> gen
-    objectPropertyToString s | identNeedsEscaping s = emit $ show s
-                             | otherwise = emit s
   match (JSBlock _ sts) = mconcat <$> sequence
-    [ return $ emit "{\n"
+    [ return $ emit "\n"
     , withIndent $ prettyStatements sts
     , return $ emit "\n"
     , currentIndent
-    , return $ emit "}"
+    , return $ emit "end"
     ]
   match (JSVar _ ident) = return $ emit ident
   match (JSVariableIntroduction _ ident value) = mconcat <$> sequence
-    [ return $ emit $ "var " ++ ident
+    [ return $ emit $ "local " ++ ident
     , maybe (return mempty) (fmap (emit " = " <>) . prettyPrintJS') value
     ]
   match (JSAssignment _ target value) = mconcat <$> sequence
@@ -91,19 +87,19 @@ literals = mkPattern' match'
   match (JSWhile _ cond sts) = mconcat <$> sequence
     [ return $ emit "while ("
     , prettyPrintJS' cond
-    , return $ emit ") "
+    , return $ emit ") do\n"
     , prettyPrintJS' sts
     ]
   match (JSFor _ ident start end sts) = mconcat <$> sequence
-    [ return $ emit $ "for (var " ++ ident ++ " = "
+    [ return $ emit $ "for " ++ ident ++ " = "
     , prettyPrintJS' start
-    , return $ emit $ "; " ++ ident ++ " < "
+    , return $ emit $ ", "
     , prettyPrintJS' end
-    , return $ emit $ "; " ++ ident ++ "++) "
+    , return $ emit $ " do"
     , prettyPrintJS' sts
     ]
   match (JSForIn _ ident obj sts) = mconcat <$> sequence
-    [ return $ emit $ "for (var " ++ ident ++ " in "
+    [ return $ emit $ "<js>for (var " ++ ident ++ " in "
     , prettyPrintJS' obj
     , return $ emit ") "
     , prettyPrintJS' sts
@@ -111,7 +107,7 @@ literals = mkPattern' match'
   match (JSIfElse _ cond thens elses) = mconcat <$> sequence
     [ return $ emit "if ("
     , prettyPrintJS' cond
-    , return $ emit ") "
+    , return $ emit ") then"
     , prettyPrintJS' thens
     , maybe (return mempty) (fmap (emit " else " <>) . prettyPrintJS') elses
     ]
@@ -119,24 +115,20 @@ literals = mkPattern' match'
     [ return $ emit "return "
     , prettyPrintJS' value
     ]
-  match (JSThrow _ value) = mconcat <$> sequence
-    [ return $ emit "throw "
-    , prettyPrintJS' value
-    ]
-  match (JSBreak _ lbl) = return $ emit $ "break " ++ lbl
-  match (JSContinue _ lbl) = return $ emit $ "continue " ++ lbl
+  match (JSBreak _ lbl) = return $ emit $ "<js>break " ++ lbl
+  match (JSContinue _ lbl) = return $ emit $ "<js>continue " ++ lbl
   match (JSLabel _ lbl js) = mconcat <$> sequence
-    [ return $ emit $ lbl ++ ": "
+    [ return $ emit $ "<js>" ++ lbl ++ ": "
     , prettyPrintJS' js
     ]
   match (JSComment _ com js) = fmap mconcat $ sequence $
     [ return $ emit "\n"
     , currentIndent
-    , return $ emit "/**\n"
+    , return $ emit "--[[\n"
     ] ++
     map asLine (concatMap commentLines com) ++
     [ currentIndent
-    , return $ emit " */\n"
+    , return $ emit "--]]\n"
     , currentIndent
     , prettyPrintJS' js
     ]
@@ -214,18 +206,6 @@ app = mkPattern' match
     return (intercalate (emit ", ") jss, val)
   match _ = mzero
 
-typeOf :: Pattern PrinterState JS ((), JS)
-typeOf = mkPattern match
-  where
-  match (JSTypeOf _ val) = Just ((), val)
-  match _ = Nothing
-
-instanceOf :: Pattern PrinterState JS (JS, JS)
-instanceOf = mkPattern match
-  where
-  match (JSInstanceOf _ val ty) = Just (val, ty)
-  match _ = Nothing
-
 unary' :: (Emit gen) => UnaryOperator -> (JS -> String) -> Operator PrinterState JS gen
 unary' op mkStr = Wrap match (<>)
   where
@@ -257,7 +237,7 @@ prettyStatements :: (Emit gen) => [JS] -> StateT PrinterState Maybe gen
 prettyStatements sts = do
   jss <- forM sts prettyPrintJS'
   indentString <- currentIndent
-  return $ intercalate (emit "\n") $ map ((<> emit ";") . (indentString <>)) jss
+  return $ intercalate (emit "\n") $ map (indentString <>) jss
 
 -- |
 -- Generate a pretty-printed string representing a Javascript expression
@@ -288,15 +268,12 @@ prettyPrintJS' = A.runKleisli $ runPattern matchValue
     OperatorTable [ [ Wrap accessor $ \prop val -> val <> emit "." <> prop ]
                   , [ Wrap indexer $ \index val -> val <> emit "[" <> index <> emit "]" ]
                   , [ Wrap app $ \args val -> val <> emit "(" <> args <> emit ")" ]
-                  , [ unary JSNew "new " ]
                   , [ Wrap lam $ \(name, args, ss) ret -> addMapping' ss <>
                       emit ("function "
                         ++ fromMaybe "" name
                         ++ "(" ++ intercalate ", " args ++ ") ")
                         <> ret ]
-                  , [ Wrap typeOf $ \_ s -> emit "typeof " <> s ]
-                  , [ unary     Not                  "!"
-                    , unary     BitwiseNot           "~"
+                  , [ unary     Not                  "not "
                     , unary     Positive             "+"
                     , negateOperator ]
                   , [ binary    Multiply             "*"
@@ -304,20 +281,15 @@ prettyPrintJS' = A.runKleisli $ runPattern matchValue
                     , binary    Modulus              "%" ]
                   , [ binary    Add                  "+"
                     , binary    Subtract             "-" ]
-                  , [ binary    ShiftLeft            "<<"
-                    , binary    ShiftRight           ">>"
-                    , binary    ZeroFillShiftRight   ">>>" ]
+                  , [ binary    Concat               ".." ]
                   , [ binary    LessThan             "<"
                     , binary    LessThanOrEqualTo    "<="
                     , binary    GreaterThan          ">"
                     , binary    GreaterThanOrEqualTo ">="
-                    , AssocR instanceOf $ \v1 v2 -> v1 <> emit " instanceof " <> v2 ]
-                  , [ binary    EqualTo              "==="
-                    , binary    NotEqualTo           "!==" ]
-                  , [ binary    BitwiseAnd           "&" ]
-                  , [ binary    BitwiseXor           "^" ]
-                  , [ binary    BitwiseOr            "|" ]
-                  , [ binary    And                  "&&" ]
-                  , [ binary    Or                   "||" ]
-                  , [ Wrap conditional $ \(ss, th, el) cond -> cond <> addMapping' ss <> emit " ? " <> prettyPrintJS1 th <> addMapping' ss <> emit " : " <> prettyPrintJS1 el ]
+                    ]
+                  , [ binary    EqualTo              "=="
+                    , binary    NotEqualTo           "~=" ]
+                  , [ binary    And                  " and " ]
+                  , [ binary    Or                   " or " ]
+                  , [ Wrap conditional $ \(ss, th, el) cond -> cond <> addMapping' ss <> emit " and " <> prettyPrintJS1 th <> addMapping' ss <> emit " or " <> prettyPrintJS1 el ]
                     ]
