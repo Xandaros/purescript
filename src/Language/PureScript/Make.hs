@@ -313,14 +313,14 @@ buildMakeActions outputDir filePathMap foreigns usePrefix =
 
   getOutputTimestamp :: ModuleName -> Make (Maybe UTCTime)
   getOutputTimestamp mn = do
-    let filePath = runModuleName mn
+    let filePath = runModuleName' "_" mn
         jsFile = outputDir </> filePath </> "init.lua"
         externsFile = outputDir </> filePath </> "externs.json"
     min <$> getTimestamp jsFile <*> getTimestamp externsFile
 
   readExterns :: ModuleName -> Make (FilePath, Externs)
   readExterns mn = do
-    let path = outputDir </> runModuleName mn </> "externs.json"
+    let path = outputDir </> runModuleName' "_" mn </> "externs.json"
     (path, ) <$> readTextFile path
 
   codegen :: CF.Module CF.Ann -> Environment -> Externs -> SupplyT Make ()
