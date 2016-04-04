@@ -237,7 +237,7 @@ prettyStatements :: (Emit gen) => [JS] -> StateT PrinterState Maybe gen
 prettyStatements sts = do
   jss <- forM sts prettyPrintJS'
   indentString <- currentIndent
-  return $ intercalate (emit "\n") $ map (indentString <>) jss
+  return $ intercalate (emit "\n") $ map ((<> emit ";") . (indentString <>)) jss
 
 -- |
 -- Generate a pretty-printed string representing a Javascript expression
