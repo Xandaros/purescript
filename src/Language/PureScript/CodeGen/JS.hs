@@ -207,7 +207,7 @@ moduleToJs (Module coms mn imps exps foreigns decls) foreign_ =
   valueToJs' (Var (_, _, _, Just (IsConstructor _ [])) name) =
     return $ JSAccessor Nothing "value" $ qualifiedToJS id name
   valueToJs' (Var (_, _, _, Just (IsConstructor _ _)) name) =
-    return $ JSAccessor Nothing "create" $ qualifiedToJS id name
+    return $ qualifiedToJS id name
   valueToJs' (Accessor _ prop val) =
     accessorString prop <$> valueToJs val
   valueToJs' (ObjectUpdate _ o ps) = do
