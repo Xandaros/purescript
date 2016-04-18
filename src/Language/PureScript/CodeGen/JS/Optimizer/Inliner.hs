@@ -157,7 +157,7 @@ inlineCommonOperators = applyAll $
   , binary ordString opGreaterThan GreaterThan
   , binary ordString opGreaterThanOrEq GreaterThanOrEqualTo
 
-  , binary semigroupString opAppend Add
+  , binary semigroupString opAppend Concat
 
   , binary booleanAlgebraBoolean opConj And
   , binary booleanAlgebraBoolean opDisj Or
