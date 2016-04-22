@@ -199,13 +199,16 @@ handleExpression val = do
   case e of
     Left errs -> PSCI $ printErrors errs
     Right _ -> do
-      psciIO $ writeFile indexFile "require('$PSCI')['$main']();"
+      psciIO $ writeFile indexFile "package.path = './.psci_modules/node_modules/?/init.lua;'\
+                                   \.. './.psci_modules/node_modules/?.lua;'\
+                                   \.. package.path\n\
+                                   \require('PSCI')['$main']();"
       process <- psciIO findNodeProcess
       result  <- psciIO $ traverse (\node -> readProcessWithExitCode node nodeArgs "") process
       case result of
         Just (ExitSuccess,   out, _)   -> PSCI $ outputStrLn out
         Just (ExitFailure _, _,   err) -> PSCI $ outputStrLn err
-        Nothing                        -> PSCI $ outputStrLn "Couldn't find node.js"
+        Nothing                        -> PSCI $ outputStrLn "Couldn't find lua"
 
 -- |
 -- Takes a list of declarations and updates the environment, then run a make. If the declaration fails,
@@ -289,7 +292,7 @@ handleTypeOf val = do
   case e of
     Left errs -> PSCI $ printErrors errs
     Right env' ->
-      case M.lookup (P.ModuleName [P.ProperName "$PSCI"], P.Ident "it") (P.names env') of
+      case M.lookup (P.ModuleName [P.ProperName "PSCI"], P.Ident "it") (P.names env') of
         Just (ty, _, _) -> PSCI . outputStrLn . P.prettyPrintType $ ty
         Nothing -> PSCI $ outputStrLn "Could not find type"
 
@@ -327,7 +330,7 @@ handleKindOf :: P.Type -> PSCI ()
 handleKindOf typ = do
   st <- PSCI $ lift get
   let m = createTemporaryModuleForKind st typ
-      mName = P.ModuleName [P.ProperName "$PSCI"]
+      mName = P.ModuleName [P.ProperName "PSCI"]
   e <- psciIO . runMake $ make st [m]
   case e of
     Left errs -> PSCI $ printErrors errs

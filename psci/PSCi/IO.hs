@@ -38,7 +38,7 @@ onFirstFileMatching f pathVariants = runMaybeT . msum $ map (MaybeT . f) pathVar
 --
 findNodeProcess :: IO (Maybe String)
 findNodeProcess = onFirstFileMatching findExecutable names
-  where names = ["nodejs", "node"]
+  where names = ["lua"]
 
 -- |
 -- Grabs the filename where the history is stored.
