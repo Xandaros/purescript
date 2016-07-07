@@ -290,7 +290,7 @@ readTextFile :: FilePath -> Make String
 readTextFile path = makeIO (const (ErrorMessage [] $ CannotReadFile path)) $ readUTF8File path
 
 -- | Infer the module name for a module by looking for the same filename with
--- a .js extension.
+-- a .lua extension.
 inferForeignModules
   :: forall m
    . MonadIO m
